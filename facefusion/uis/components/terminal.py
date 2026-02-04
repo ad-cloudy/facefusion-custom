@@ -2,6 +2,7 @@ import io
 import logging
 import math
 import os
+import time
 from typing import Optional
 
 import gradio
@@ -9,6 +10,7 @@ from tqdm import tqdm
 
 import facefusion.choices
 from facefusion import logger, state_manager, translator
+from facefusion.execution import get_gpu_memory_usage
 from facefusion.types import LogLevel
 
 LOG_LEVEL_DROPDOWN : Optional[gradio.Dropdown] = None
@@ -65,10 +67,38 @@ def tqdm_update(self : tqdm, n : int = 1) -> None:
 		LOG_BUFFER.flush()
 
 
+def format_eta(seconds : float) -> str:
+	if seconds < 0:
+		return '--:--'
+
+	total_seconds = int(seconds)
+	hours = total_seconds // 3600
+	minutes = (total_seconds % 3600) // 60
+	secs = total_seconds % 60
+
+	if hours > 0:
+		return str(hours) + 'h ' + str(minutes) + 'm'
+	if minutes > 0:
+		return str(minutes) + 'm ' + str(secs) + 's'
+	return str(secs) + 's'
+
+
 def create_tqdm_output(self : tqdm) -> Optional[str]:
 	if not self.disable and self.desc and self.total:
 		percentage = math.floor(self.n / self.total * 100)
-		return self.desc + translator.get('colon') + ' ' + str(percentage) + '% (' + str(self.n) + '/' + str(self.total) + ')'
+		output = self.desc + translator.get('colon') + ' ' + str(percentage) + '% (' + str(self.n) + '/' + str(self.total) + ')'
+
+		if self.n > 0:
+			elapsed = time.time() - self.start_t
+			remaining = elapsed / self.n * (self.total - self.n)
+			output += ' | ETA ' + format_eta(remaining)
+
+		gpu_mem = get_gpu_memory_usage()
+
+		if gpu_mem:
+			output += ' | VRAM ' + gpu_mem
+
+		return output
 	if not self.disable and self.desc and self.unit:
 		return self.desc + translator.get('colon') + ' ' + str(self.n) + ' ' + self.unit
 	return None

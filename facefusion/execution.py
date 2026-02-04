@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+import time
 import xml.etree.ElementTree as ElementTree
 from functools import lru_cache
 from typing import List, Optional
@@ -10,6 +11,8 @@ import facefusion.choices
 from facefusion.types import ExecutionDevice, ExecutionProvider, InferenceSessionProvider, ValueAndUnit
 
 set_default_logger_severity(3)
+
+_gpu_memory_cache : dict = { 'text': '', 'timestamp': 0.0 }
 
 
 def has_execution_provider(execution_provider : ExecutionProvider) -> bool:
@@ -146,6 +149,33 @@ def detect_execution_devices() -> List[ExecutionDevice]:
 		})
 
 	return execution_devices
+
+
+def get_gpu_memory_usage() -> str:
+	current_time = time.time()
+
+	if current_time - _gpu_memory_cache['timestamp'] < 5:
+		return _gpu_memory_cache['text']
+
+	result = ''
+
+	try:
+		devices = detect_execution_devices()
+
+		if devices:
+			device = devices[0]
+			total = device.get('video_memory', {}).get('total')
+			free = device.get('video_memory', {}).get('free')
+
+			if total and free:
+				used_value = total['value'] - free['value']
+				result = str(used_value) + ' ' + total['unit'] + ' / ' + str(total['value']) + ' ' + total['unit']
+	except Exception:
+		pass
+
+	_gpu_memory_cache['text'] = result
+	_gpu_memory_cache['timestamp'] = current_time
+	return result
 
 
 def create_value_and_unit(text : str) -> Optional[ValueAndUnit]:

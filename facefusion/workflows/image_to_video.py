@@ -1,3 +1,4 @@
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 
@@ -6,6 +7,7 @@ from tqdm import tqdm
 
 from facefusion import ffmpeg
 from facefusion import logger, process_manager, state_manager, translator, video_manager
+from facefusion.execution import get_gpu_memory_usage
 from facefusion.audio import create_empty_audio_frame, get_audio_frame, get_voice_frame
 from facefusion.common_helper import get_first
 from facefusion.content_analyser import analyse_video
@@ -77,6 +79,7 @@ def process_video() -> ErrorCode:
 	if temp_frame_paths:
 		with tqdm(total = len(temp_frame_paths), desc = translator.get('processing'), unit = 'frame', ascii = ' =', disable = state_manager.get_item('log_level') in [ 'warn', 'error' ]) as progress:
 			progress.set_postfix(execution_providers = state_manager.get_item('execution_providers'))
+			last_gpu_check = 0.0
 
 			with ThreadPoolExecutor(max_workers = state_manager.get_item('execution_thread_count')) as executor:
 				futures = []
@@ -92,6 +95,16 @@ def process_video() -> ErrorCode:
 
 					if not future.cancelled():
 						future.result()
+						current_time = time.time()
+
+						if current_time - last_gpu_check > 5:
+							gpu_mem = get_gpu_memory_usage()
+
+							if gpu_mem:
+								progress.set_postfix(execution_providers = state_manager.get_item('execution_providers'), vram = gpu_mem)
+
+							last_gpu_check = current_time
+
 						progress.update()
 
 		for processor_module in get_processors_modules(state_manager.get_item('processors')):
